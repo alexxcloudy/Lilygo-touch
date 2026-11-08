@@ -6,14 +6,14 @@
 // Color definitions (RGB565)
 #define COLOR_BG          0x0000 // Deep OLED black
 #define COLOR_EYES        0xFFFF // Pure bright white
-#define COLOR_LIME        0x87F0 // Troko neon lime (#84FF00)
+#define COLOR_LIME        0x87F0 // Kimo signature neon lime (#84FF00)
 #define COLOR_PINK        0xFA6F // Soft blushing pink (#FF4E78)
 #define COLOR_CYAN        0x067F // Neon tear cyan (#00D2FF)
 #define COLOR_RED         0xF947 // Enraged anime red (#FF2A38)
 #define COLOR_COOL_DARK   0x18E3 // Sunglasses dark tint
 #define COLOR_COOL_GLINT  0xFFFF // Sunglasses white reflection
 
-enum TrokoState {
+enum KimoState {
   STATE_REPOSO = 0,
   STATE_ESCUCHA,
   STATE_PENSANDO,
@@ -35,7 +35,7 @@ enum TrokoState {
   STATE_COUNT
 };
 
-const char* const TROKO_NAMES[STATE_COUNT] = {
+const char* const KIMO_NAMES[STATE_COUNT] = {
   "REPOSO", "ESCUCHA", "PENSANDO", "EXITO", "CARINO", "COOL",
   "FELIZ", "RISA", "RISA DE OJOS", "COMPLICIDAD", "SEGURO", "OOPS",
   "VERGUENZA", "RISA APENADA", "SORPRESA", "SHOCK", "ENFADO", "TRISTEZA"
@@ -57,9 +57,9 @@ struct TearParticle {
   bool active;
 };
 
-class TrokoEngine {
+class KimoEngine {
 public:
-  TrokoState currentState = STATE_REPOSO;
+  KimoState currentState = STATE_REPOSO;
 
   // Screen metrics (Landscape 320x170)
   const int16_t screenW = 320;
@@ -126,7 +126,7 @@ public:
     nextBlinkTime = millis() + 3000;
   }
 
-  void setState(TrokoState st) {
+  void setState(KimoState st) {
     currentState = st;
     configureTargetsForState(currentState);
     // Smoothly return gaze to center when emotion transitions
@@ -143,12 +143,12 @@ public:
 
   void nextState() {
     int next = ((int)currentState + 1) % STATE_COUNT;
-    setState((TrokoState)next);
+    setState((KimoState)next);
   }
 
   void prevState() {
     int prev = ((int)currentState - 1 + STATE_COUNT) % STATE_COUNT;
-    setState((TrokoState)prev);
+    setState((KimoState)prev);
   }
 
   void lookAt(int16_t touchX, int16_t touchY) {
@@ -160,7 +160,7 @@ public:
     targetGazeY = constrain(dy * 5.0f, -5.0f, 5.0f);
   }
 
-  void configureTargetsForState(TrokoState st) {
+  void configureTargetsForState(KimoState st) {
     targetAngle = 0.0f;
     targetArch = 0.0f;
 
@@ -196,7 +196,7 @@ public:
         targetRW = 90.0f; targetRH = 66.0f; targetRR = 22.0f;
         break;
 
-      case STATE_FELIZ: // Large round friendly eyes (Image 1)
+      case STATE_FELIZ: // Large round friendly eyes
         targetLW = 86.0f; targetLH = 100.0f; targetLR = 43.0f;
         targetRW = 86.0f; targetRH = 100.0f; targetRR = 43.0f;
         break;
@@ -207,7 +207,7 @@ public:
         targetArch = 1.0f;
         break;
 
-      case STATE_RISA_OJOS: // Tightly closed laughing arches (⌒ ⌒)
+      case STATE_RISA_OJOS: // Tightly closed laughing arches
         targetLW = 88.0f; targetLH = 52.0f; targetLR = 26.0f;
         targetRW = 88.0f; targetRH = 52.0f; targetRR = 26.0f;
         targetArch = 1.0f;
@@ -240,7 +240,7 @@ public:
         targetArch = 1.0f;
         break;
 
-      case STATE_SORPRESA: // Huge wide circular eyes (Image 1 O O)
+      case STATE_SORPRESA: // Huge wide circular eyes
         targetLW = 90.0f; targetLH = 102.0f; targetLR = 45.0f;
         targetRW = 90.0f; targetRH = 102.0f; targetRR = 45.0f;
         break;
@@ -424,15 +424,7 @@ public:
     float curH = max(3.0f, h * blinkScale);
     float curR = min(r, curH / 2.0f);
 
-    // Hard safety clamp: ensure the eye never exceeds safe area [22, 160] vertically
     float halfH = curH / 2.0f;
-    if (cy - halfH < 22.0f) {
-      cy = 22.0f + halfH;
-    }
-    if (cy + halfH > 160.0f) {
-      cy = 160.0f - halfH;
-    }
-
     int16_t x0 = (int16_t)(cx - w / 2.0f);
     int16_t y0 = (int16_t)(cy - halfH);
     int16_t iw = (int16_t)w;
@@ -440,15 +432,10 @@ public:
     int16_t ir = (int16_t)curR;
 
     // Inverted happy arch eye (^ ^) for Risa, Cariño, Risa de ojos
-    // Uses rock-solid fillCircle primitives (zero ellipse overflow risk)
     if (isArch > 0.4f) {
       int16_t rad = iw / 2;
       int16_t thick = 14;
       int16_t archY = (int16_t)(cy + 8);
-
-      if (archY - rad < 24) {
-        archY = 24 + rad;
-      }
 
       // Outer semicircle
       spr.fillCircle((int16_t)cx, archY, rad, COLOR_EYES);
@@ -467,7 +454,6 @@ public:
       drawSafeCapsule(spr, x0, y0, iw, ih, ir, COLOR_EYES);
 
       int16_t cutH = min((int16_t)18, (int16_t)(ih / 2));
-      // Angled top eyelid furrow
       if (angle < 0) { // Anger (furrowed inward)
         if (isLeft) {
           spr.fillTriangle(x0 - 2, y0 - 2, x0 + iw + 2, y0 - 2, x0 + iw + 2, y0 + cutH, COLOR_BG);
@@ -538,13 +524,13 @@ public:
   void render(LGFX_Sprite &spr) {
     spr.fillScreen(COLOR_BG);
 
-    // 1. Draw Troko's Large Eyes (NO mouth or nose dot)
+    // 1. Draw Large Expressive Eyes (NO mouth or nose dot)
     drawSingleEye(spr, eyeLX, eyeLY, eyeLW, eyeLH, eyeLR, eyeAngle, true);
     drawSingleEye(spr, eyeRX, eyeRY, eyeRW, eyeRH, eyeRR, -eyeAngle, false);
 
     // 2. State-Specific Overlays and Accessories
 
-    // REPOSO: Signature Troko Lime Curved Antenna mark
+    // REPOSO: Signature Neon Lime Antenna mark
     if (currentState == STATE_REPOSO) {
       float antennaPulse = 1.0f + 0.1f * sinf(animTime * 2.0f);
       int16_t ax = (int16_t)(eyeRX + 26);
@@ -674,7 +660,7 @@ public:
 
     // 3. Permanent Scene Number & Name Overlay
     char idStr[32];
-    snprintf(idStr, sizeof(idStr), "[%02d] %s", (int)currentState + 1, TROKO_NAMES[currentState]);
+    snprintf(idStr, sizeof(idStr), "[%02d] %s", (int)currentState + 1, KIMO_NAMES[currentState]);
     spr.setTextDatum(textdatum_t::top_left);
     int16_t txtW = spr.textWidth(idStr, &fonts::Font2);
     spr.fillRoundRect(3, 3, txtW + 10, 17, 4, COLOR_BG);

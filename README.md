@@ -1,8 +1,8 @@
-# Troko ESP32-S3 - LilyGO T-Display-S3 Touch (1.9")
+# Kimo ESP32-S3 - LilyGO T-Display-S3 Touch (1.9")
 
-Adaptación de las expresiones emocionales y funcionalidad del robot compañero **[Troko](https://troko.vercel.app/)** para la placa **LilyGO T-Display-S3 Touch** (ESP32-S3 con pantalla ST7789 paralela de 8 bits y táctil capacitivo CST816).
+Avatar emocional interactivo y compañero robótico diseñado para la placa **LilyGO T-Display-S3 Touch** (ESP32-S3 con pantalla ST7789 paralela de 8 bits y panel táctil capacitivo CST816).
 
-![Troko Display](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg)
+![Kimo Display](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
 ![FPS](https://img.shields.io/badge/FPS-60-brightgreen.svg)
 
@@ -32,12 +32,12 @@ Adaptación de las expresiones emocionales y funcionalidad del robot compañero 
 
 - **Rendimiento a 60 FPS sin tirones**:
   - Motor gráfico de doble búfer (*LGFX_Sprite*) con renderizado procedural vectorial directo.
-  - Cero parpadeos (*flicker-free*) y sin artefactos en bus paralelo.
+  - Cero parpadeos (*flicker-free*) y sin desincronizaciones en el bus paralelo.
   - Micro-parpadeos fisiológicos (*blinking*) periódicos automáticos.
 
 - **Control Táctil Capacitivo (CST816)**:
-  - **Seguimiento de mirada**: Los ojos siguen la posición del dedo en pantalla y regresan suavemente al centro al soltar.
-  - **Deslizar (Swipe)**: Deslizar a la izquierda o derecha (o arriba/abajo) cambia a la emoción siguiente/anterior con protección antirebote.
+  - **Seguimiento de mirada**: Los ojos siguen con suavidad la posición del dedo en pantalla y regresan al centro al soltar.
+  - **Deslizar (Swipe)**: Deslizar a la izquierda o derecha (o arriba/abajo) cambia a la emoción siguiente/anterior con protección antirebote de disparo único.
   - **Doble toque**: Activa / desactiva el modo carrusel automático (*AutoPlay*).
   - **Pulsación larga**: Regresa directamente al estado de `REPOSO`.
 
@@ -46,7 +46,7 @@ Adaptación de las expresiones emocionales y funcionalidad del robot compañero 
   - **Botón BOOT (GPIO 0)**: Alternar modo automático (*AutoPlay*).
 
 - **Simulador Web Incluido**:
-  - Archivo `troko_simulator.html` para previsualizar y probar las 18 expresiones en cualquier navegador con seguimiento de ratón.
+  - Archivo `kimo_simulator.html` para previsualizar y probar las 18 expresiones en cualquier navegador web con seguimiento de ratón.
 
 ---
 
@@ -90,4 +90,4 @@ Adaptación de las expresiones emocionales y funcionalidad del robot compañero 
 
 ## 📄 Licencia
 
-Código bajo licencia MIT. Inspirado en el diseño original de [Troko](https://troko.vercel.app/).
+Código bajo licencia MIT.
