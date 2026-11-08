@@ -1,93 +1,41 @@
-# Kimo ESP32-S3 - LilyGO T-Display-S3 Touch (1.9")
+# Kimo ESP32-S3 - LilyGO T-Display-S3 Touch (Rama `lvgl`)
 
-Avatar emocional interactivo y compañero robótico diseñado para la placa **LilyGO T-Display-S3 Touch** (ESP32-S3 con pantalla ST7789 paralela de 8 bits y panel táctil capacitivo CST816).
+Esta rama (`lvgl`) contiene la migración completa de **Kimo** al framework **[LVGL v8](https://lvgl.io/)** (Light and Versatile Graphics Library), ejecutándose sobre la placa **LilyGO T-Display-S3 Touch** (ESP32-S3 con pantalla ST7789 paralela de 8 bits y táctil CST816).
 
-![Kimo Display](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg)
+![LVGL](https://img.shields.io/badge/UI-LVGL%208.4.0-3792cb.svg)
+![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg)
-![FPS](https://img.shields.io/badge/FPS-60-brightgreen.svg)
 
 ---
 
-## ✨ Características
+## 🏗️ Arquitectura de la Migración a LVGL
 
-- **18 Expresiones Emocionales Completas**:
-  1. `[01] REPOSO`: Presencia tranquila, micro-parpadeo y antena neón superior.
-  2. `[02] ESCUCHA`: Ojos atentos con ondas de audio laterales animadas.
-  3. `[03] PENSANDO`: Mirada dirigida hacia arriba con puntos de procesamiento orbitales.
-  4. `[04] ÉXITO`: Ojos alegres con destellos en estrella rebotantes.
-  5. `[05] CARIÑO`: Arcos felices `(^ ^)` con corazones flotantes y mejillas sonrojadas.
-  6. `[06] COOL`: Gafas de sol oscuras con reflejo especular en movimiento.
-  7. `[07] FELIZ`: Ojos grandes y redondos amigables.
-  8. `[08] RISA`: Arcos en `(^ ^)` con rebote alegre.
-  9. `[09] RISA DE OJOS`: Arcos cerrados con destello central y gotas de risa.
-  10. `[10] COMPLICIDAD`: Guiño cómplice (ojo izquierdo abierto, derecho cerrado en línea).
-  11. `[11] SEGURO`: Ojos almendrados confiados con destellos dobles.
-  12. `[12] OOPS`: Mirada hacia abajo con gota de sudor nerviosa.
-  13. `[13] VERGÜENZA`: Mirada tímida con líneas de sonrojo `(///)`.
-  14. `[14] RISA APENADA`: Risa arqueada nerviosa con gota y sonrojo.
-  15. `[15] SORPRESA`: Ojos circulares gigantes bien abiertos `(O O)`.
-  16. `[16] SHOCK`: Ojos alargados con micro-temblor y gotas dobles.
-  17. `[17] ENFADO`: Ceño fruncido angular con símbolo de vena enfadada anime `(💢)`.
-  18. `[18] TRISTEZA`: Ojos caídos hacia abajo con cascada de lágrimas de neón.
+1. **Gestor de Pantalla (Display Driver)**:
+   - LovyanGFX actúa como capa física DMA ultrarrápida para el bus paralelo i8080 de 8 bits.
+   - El callback `my_disp_flush` transfiere los búferes de dibujo de LVGL (`lv_disp_draw_buf_t`, 320x40 doble búfer) directamente al controlador ST7789 por DMA.
 
-- **Rendimiento a 60 FPS sin tirones**:
-  - Motor gráfico de doble búfer (*LGFX_Sprite*) con renderizado procedural vectorial directo.
-  - Cero parpadeos (*flicker-free*) y sin desincronizaciones en el bus paralelo.
-  - Micro-parpadeos fisiológicos (*blinking*) periódicos automáticos.
+2. **Gestor de Entrada Táctil (Input Device Driver)**:
+   - El chip CST816 está registrado como dispositivo de entrada tipo puntero (`LV_INDEV_TYPE_POINTER`).
+   - Los gestos de deslizamiento (*swipes*), pulsación mantenida (*long press*) y arrastre de mirada se gestionan mediante eventos nativos de LVGL (`LV_EVENT_GESTURE`, `LV_EVENT_PRESSING`, `LV_EVENT_RELEASED`, `LV_EVENT_LONG_PRESSED`).
 
-- **Control Táctil Capacitivo (CST816)**:
-  - **Seguimiento de mirada**: Los ojos siguen con suavidad la posición del dedo en pantalla y regresan al centro al soltar.
-  - **Deslizar (Swipe)**: Deslizar a la izquierda o derecha (o arriba/abajo) cambia a la emoción siguiente/anterior con protección antirebote de disparo único.
-  - **Doble toque**: Activa / desactiva el modo carrusel automático (*AutoPlay*).
-  - **Pulsación larga**: Regresa directamente al estado de `REPOSO`.
+3. **Renderizado de Ojos y Emociones como Widgets Nativos**:
+   - Ojos representados como objetos LVGL (`lv_obj_t`) con estilos dinámicos de radio (`lv_obj_set_style_radius`), escala y transformaciones angulares (`lv_obj_set_style_transform_angle`) para ceños fruncidos (Enfado/Tristeza).
+   - Ojos arqueados felices creados con arcos vectoriales nativos (`lv_arc_t`).
+   - Todos los accesorios (gafas de sol oscuras, antena neón, ondas de audio, destellos, gotas de sudor, lágrimas y corazones flotantes) son objetos y etiquetas LVGL manejados por un temporizador interno de 60 Hz (`lv_timer_create`).
 
-- **Botones Físicos**:
-  - **Botón USER (GPIO 14)**: Siguiente emoción.
-  - **Botón BOOT (GPIO 0)**: Alternar modo automático (*AutoPlay*).
-
-- **Simulador Web Incluido**:
-  - Archivo `kimo_simulator.html` para previsualizar y probar las 18 expresiones en cualquier navegador web con seguimiento de ratón.
+4. **Configuración de memoria (`lv_conf.h`)**:
+   - `LV_COLOR_DEPTH 16` (RGB565).
+   - Heap dedicado para LVGL configurado en 48 KB.
+   - `LV_TICK_CUSTOM 1` vinculado directamente a `millis()`.
 
 ---
 
-## 🛠️ Hardware y Pinout
+## 🚀 Compilación y Flasheo
 
-- **Placa**: LilyGO T-Display-S3 Touch (1.9" IPS ST7789, 320x170 apaisado / horizontal).
-- **SoC**: ESP32-S3 Dual-Core Xtensa LX7, 16MB Flash, 8MB PSRAM.
-- **Bus LCD Paralelo 8 bits (i8080)**:
-  - `WR`: GPIO 8
-  - `RD`: GPIO 9
-  - `RS / DC`: GPIO 7
-  - `CS`: GPIO 6
-  - `RST`: GPIO 5
-  - `PWR`: GPIO 15
-  - `BL (Backlight)`: GPIO 38
-  - `D0-D7`: GPIO 39, 40, 41, 42, 45, 46, 47, 48
-- **Táctil Capacitivo I2C (CST816)**:
-  - `SDA`: GPIO 18
-  - `SCL`: GPIO 17
-  - `RST`: GPIO 21
-  - `INT`: GPIO 16
+```bash
+# Cambiar a la rama lvgl
+git checkout lvgl
 
----
-
-## 🚀 Instalación y Compilación con PlatformIO
-
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/alexxcloudy/Lilygo-touch.git
-   cd Lilygo-touch
-   ```
-
-2. Abre la carpeta en **VS Code** con la extensión **PlatformIO IDE** (o usa PlatformIO CLI).
-
-3. Conecta la placa LilyGO por USB-C y sube el firmware:
-   ```bash
-   pio run -t upload
-   ```
-
----
-
-## 📄 Licencia
-
-Código bajo licencia MIT.
+# Compilar y subir por USB
+pio run -t upload
+```

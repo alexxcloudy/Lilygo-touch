@@ -1,56 +1,78 @@
 #include <Arduino.h>
 #include "LGFX_Config.hpp"
 #include "CST816Touch.hpp"
-#include "KimoEmotions.hpp"
+#include "KimoLVGL.hpp"
 
 // Physical buttons on T-Display-S3
 #define BTN_BOOT 0
 #define BTN_USER 14
 
 LGFX lcd;
-LGFX_Sprite canvas(&lcd);
 CST816Touch touch;
-KimoEngine kimo;
+KimoLVGL kimo;
+
+// LVGL Draw Buffer (320 x 40 x 16-bit)
+static lv_disp_draw_buf_t draw_buf;
+static lv_color_t buf_1[320 * 40];
+static lv_color_t buf_2[320 * 40];
 
 uint32_t lastBtn14Press = 0;
 uint32_t lastBtn0Press = 0;
-uint32_t lastFrameTime = 0;
 
-void setup() {
-  Serial.begin(115200);
-  delay(200);
-  Serial.println("======================================");
-  Serial.println("   KIMO ESP32-S3 COMPANION (V2 BIG)   ");
-  Serial.println("   LilyGO T-Display-S3 Touch (1.9\")   ");
-  Serial.println("======================================");
+// Display Flush Callback for LVGL
+void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+  uint32_t w = (area->x2 - area->x1 + 1);
+  uint32_t h = (area->y2 - area->y1 + 1);
 
-  // Initialize Hardware Buttons
-  pinMode(BTN_BOOT, INPUT_PULLUP);
-  pinMode(BTN_USER, INPUT_PULLUP);
+  lcd.pushImageDMA(area->x1, area->y1, w, h, (lgfx::rgb565_t *)&color_p->full);
+  lv_disp_flush_ready(disp);
+}
 
-  // Initialize ST7789 Parallel Display
-  lcd.init();
-  lcd.setRotation(1); // Landscape 320x170
-  lcd.setBrightness(230);
-  lcd.fillScreen(COLOR_BG);
-
-  // Initialize CST816 Touch Screen
-  bool touchOk = touch.begin();
-  Serial.printf("CST816 Touch Status: %s\n", touchOk ? "ONLINE" : "OFFLINE");
-
-  // Create Double-Buffered Canvas (320 x 170 x 16-bit)
-  canvas.setColorDepth(16);
-  if (!canvas.createSprite(320, 170)) {
-    Serial.println("Allocating canvas sprite in PSRAM...");
-    canvas.setPsram(true);
-    canvas.createSprite(320, 170);
+// Touch Input Read Callback for LVGL
+void my_touch_read(lv_indev_drv_t *indev_drv, lv_indev_data_t *data) {
+  bool active = touch.update(1);
+  if (active) {
+    data->state = LV_INDEV_STATE_PR;
+    data->point.x = touch.x;
+    data->point.y = touch.y;
+  } else {
+    data->state = LV_INDEV_STATE_REL;
   }
-  canvas.fillScreen(COLOR_BG);
+}
 
-  // Initialize Kimo Engine
-  kimo.init();
+// Screen Touch and Gesture Handler
+static void screen_event_cb(lv_event_t *e) {
+  lv_event_code_t code = lv_event_get_code(e);
 
-  Serial.println("Kimo V2 ready! Large, expressive eyes active.");
+  if (code == LV_EVENT_GESTURE) {
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+    if (dir == LV_DIR_LEFT || dir == LV_DIR_TOP) {
+      kimo.nextState();
+      kimo.resetGaze();
+      Serial.printf("LVGL Gesture Next -> %s\n", KIMO_NAMES[kimo.currentState]);
+    } else if (dir == LV_DIR_RIGHT || dir == LV_DIR_BOTTOM) {
+      kimo.prevState();
+      kimo.resetGaze();
+      Serial.printf("LVGL Gesture Prev -> %s\n", KIMO_NAMES[kimo.currentState]);
+    }
+  } else if (code == LV_EVENT_PRESSING) {
+    lv_point_t p;
+    lv_indev_get_point(lv_indev_get_act(), &p);
+    kimo.lookAt(p.x, p.y);
+  } else if (code == LV_EVENT_RELEASED) {
+    kimo.resetGaze();
+  } else if (code == LV_EVENT_LONG_PRESSED) {
+    kimo.setState(STATE_REPOSO);
+    kimo.resetGaze();
+    Serial.println("LVGL Long Press -> Reset to REPOSO");
+  } else if (code == LV_EVENT_SHORT_CLICKED) {
+    // Single tap can toggle quick wink or micro expression
+  }
+}
+
+// 60 Hz Animation Timer
+static void anim_timer_cb(lv_timer_t *timer) {
+  kimo.update();
 }
 
 void handleButtons() {
@@ -76,53 +98,64 @@ void handleButtons() {
   }
 }
 
-void handleTouch() {
-  bool active = touch.update(1);
-  uint32_t now = millis();
-  static uint32_t lastGestureTime = 0;
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println("======================================");
+  Serial.println("     KIMO ESP32-S3 COMPANION (LVGL)   ");
+  Serial.println("   LilyGO T-Display-S3 Touch (1.9\")   ");
+  Serial.println("======================================");
 
-  if (active) {
-    kimo.lookAt(touch.x, touch.y);
+  // Initialize Hardware Buttons
+  pinMode(BTN_BOOT, INPUT_PULLUP);
+  pinMode(BTN_USER, INPUT_PULLUP);
 
-    if (touch.gesture != GESTURE_NONE && (now - lastGestureTime > 350)) {
-      if (touch.gesture == GESTURE_SLIDE_LEFT || touch.gesture == GESTURE_SLIDE_UP) {
-        lastGestureTime = now;
-        kimo.nextState();
-        kimo.resetGaze();
-        Serial.printf("Swipe Next -> %s\n", KIMO_NAMES[kimo.currentState]);
-      } else if (touch.gesture == GESTURE_SLIDE_RIGHT || touch.gesture == GESTURE_SLIDE_DOWN) {
-        lastGestureTime = now;
-        kimo.prevState();
-        kimo.resetGaze();
-        Serial.printf("Swipe Prev -> %s\n", KIMO_NAMES[kimo.currentState]);
-      } else if (touch.gesture == GESTURE_LONG_PRESS) {
-        lastGestureTime = now;
-        kimo.setState(STATE_REPOSO);
-        kimo.resetGaze();
-        Serial.println("Long Press -> Reset to REPOSO");
-      } else if (touch.gesture == GESTURE_DOUBLE_CLICK) {
-        lastGestureTime = now;
-        kimo.autoPlay = !kimo.autoPlay;
-        kimo.nextAutoCycle = now + 4000;
-        Serial.printf("Double Click -> AutoPlay: %s\n", kimo.autoPlay ? "ON" : "OFF");
-      }
-    }
-  } else {
-    kimo.resetGaze();
-  }
+  // Initialize ST7789 Parallel Display
+  lcd.init();
+  lcd.setRotation(1); // Landscape 320x170
+  lcd.setBrightness(230);
+  lcd.fillScreen(0x0000);
+
+  // Initialize CST816 Touch Screen
+  bool touchOk = touch.begin();
+  Serial.printf("CST816 Touch Status: %s\n", touchOk ? "ONLINE" : "OFFLINE");
+
+  // Initialize LVGL
+  lv_init();
+
+  // Initialize Display Driver in LVGL
+  lv_disp_draw_buf_init(&draw_buf, buf_1, buf_2, 320 * 40);
+
+  static lv_disp_drv_t disp_drv;
+  lv_disp_drv_init(&disp_drv);
+  disp_drv.hor_res = 320;
+  disp_drv.ver_res = 170;
+  disp_drv.flush_cb = my_disp_flush;
+  disp_drv.draw_buf = &draw_buf;
+  lv_disp_drv_register(&disp_drv);
+
+  // Initialize Touch Driver in LVGL
+  static lv_indev_drv_t indev_drv;
+  lv_indev_drv_init(&indev_drv);
+  indev_drv.type = LV_INDEV_TYPE_POINTER;
+  indev_drv.read_cb = my_touch_read;
+  lv_indev_t *touch_indev = lv_indev_drv_register(&indev_drv);
+
+  // Add gesture detection to active screen
+  lv_obj_t *scr = lv_scr_act();
+  lv_obj_add_event_cb(scr, screen_event_cb, LV_EVENT_ALL, NULL);
+
+  // Initialize Kimo LVGL Widgets
+  kimo.init();
+
+  // Create 60 FPS animation timer
+  lv_timer_create(anim_timer_cb, 16, NULL);
+
+  Serial.println("Kimo LVGL ready! Native widgets, animations and touch gestures active.");
 }
 
 void loop() {
   handleButtons();
-  handleTouch();
-
-  uint32_t now = millis();
-  // Frame Limiter (~60 FPS)
-  if (now - lastFrameTime >= 16) {
-    lastFrameTime = now;
-    kimo.update();
-    kimo.render(canvas);
-    canvas.pushSprite(0, 0);
-  }
-  delay(1);
+  lv_timer_handler();
+  delay(5);
 }
