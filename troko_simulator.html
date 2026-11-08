@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Simulador Troko - LilyGO T-Display-S3 (320x170)</title>
+<style>
+  body {
+    background: #0f0f11;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px;
+    margin: 0;
+  }
+  h1 { margin: 0 0 6px 0; font-size: 24px; color: #84FF00; }
+  p.sub { margin: 0 0 20px 0; color: #888; font-size: 14px; }
+  
+  .display-wrapper {
+    background: #1e1e24;
+    padding: 16px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    border: 1px solid #2a2a35;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .bezel {
+    background: #000;
+    padding: 12px 18px;
+    border-radius: 20px;
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.1), 0 4px 15px rgba(0,0,0,0.8);
+    border: 3px solid #333;
+    position: relative;
+  }
+  
+  canvas {
+    display: block;
+    background: #000;
+    border-radius: 4px;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  .status-bar {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #84FF00;
+    font-family: monospace;
+  }
+
+  .controls {
+    margin-top: 24px;
+    max-width: 720px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  
+  button {
+    background: #25252f;
+    color: #ccc;
+    border: 1px solid #3a3a48;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover { background: #353545; color: #fff; }
+  button.active {
+    background: #84FF00;
+    color: #000;
+    border-color: #84FF00;
+    box-shadow: 0 0 12px rgba(132, 255, 0, 0.4);
+  }
+</style>
+</head>
+<body>
+
+<h1>Simulador Troko - LilyGO T-Display-S3</h1>
+<p class="sub">Resolución nativa: 320 &times; 170 píxeles &bull; Escala 2x &bull; Mueve el ratón para simular el táctil</p>
+
+<div class="display-wrapper">
+  <div class="bezel">
+    <canvas id="screen" width="320" height="170" style="width: 640px; height: 340px;"></canvas>
+  </div>
+  <div class="status-bar" id="status">Estado actual: REPOSO | FPS: 60</div>
+</div>
+
+<div class="controls" id="btnContainer"></div>
+
+<script>
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+
+const STATES = [
+  "REPOSO", "ESCUCHA", "PENSANDO", "EXITO", "CARINO", "COOL",
+  "FELIZ", "RISA", "RISA_OJOS", "COMPLICIDAD", "SEGURO", "OOPS",
+  "VERGUENZA", "RISA_APENADA", "SORPRESA", "SHOCK", "ENFADO", "TRISTEZA"
+];
+
+let currentState = "REPOSO";
+let stateChangedTime = Date.now();
+
+// Colors
+const COLOR_BG = "#000000";
+const COLOR_EYES = "#FFFFFF";
+const COLOR_LIME = "#84FF00";
+const COLOR_PINK = "#FF4E78";
+const COLOR_CYAN = "#00D2FF";
+const COLOR_RED = "#FF2A38";
+const COLOR_COOL_DARK = "#181C20";
+
+// Screen metrics
+const screenW = 320;
+const screenH = 170;
+const eyeBaseLeftX = 100;
+const eyeBaseRightX = 220;
+const eyeBaseY = 85;
+
+// Variables
+let eyeLX = eyeBaseLeftX, eyeLY = eyeBaseY;
+let eyeRX = eyeBaseRightX, eyeRY = eyeBaseY;
+let eyeLW = 94, eyeLH = 76, eyeLR = 38;
+let eyeRW = 94, eyeRH = 76, eyeRR = 38;
+let eyeAngle = 0;
+let isArch = 0;
+let blinkScale = 1.0;
+
+let targetLW = 94, targetLH = 76, targetLR = 38;
+let targetRW = 94, targetRH = 76, targetRR = 38;
+let targetAngle = 0;
+let targetArch = 0;
+
+let gazeX = 0, gazeY = 0;
+let targetGazeX = 0, targetGazeY = 0;
+let lastInteraction = Date.now();
+let nextIdleGlance = Date.now() + 3000;
+let nextBlink = Date.now() + 2500;
+let blinkEnd = 0;
+
+// Particles
+let hearts = [];
+let tears = [];
+
+function setState(st) {
+  currentState = st;
+  stateChangedTime = Date.now();
+  document.getElementById('status').innerText = `Estado actual: ${st} | FPS: 60`;
+  document.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('active', b.innerText === st);
+  });
+
+  targetAngle = 0;
+  targetArch = 0;
+
+  switch (st) {
+    case "REPOSO": // Relaxed, large comfortable capsule eyes
+      targetLW = 96; targetLH = 68; targetLR = 34;
+      targetRW = 96; targetRH = 68; targetRR = 34;
+      break;
+    case "ESCUCHA": // Attentive wide round eyes
+      targetLW = 84; targetLH = 98; targetLR = 42;
+      targetRW = 84; targetRH = 98; targetRR = 42;
+      break;
+    case "PENSANDO": // Eyes looking up-right
+      targetLW = 82; targetLH = 90; targetLR = 41;
+      targetRW = 82; targetRH = 90; targetRR = 41;
+      break;
+    case "EXITO": // Big bouncy joyful eyes
+      targetLW = 86; targetLH = 98; targetLR = 43;
+      targetRW = 86; targetRH = 98; targetRR = 43;
+      break;
+    case "CARINO": // Sweet curved happy arches
+      targetLW = 88; targetLH = 54; targetLR = 27;
+      targetRW = 88; targetRH = 54; targetRR = 27;
+      targetArch = 1.0;
+      break;
+    case "COOL": // Sleek dark sunglasses
+      targetLW = 90; targetLH = 66; targetLR = 22;
+      targetRW = 90; targetRH = 66; targetRR = 22;
+      break;
+    case "FELIZ": // Large round friendly eyes (Image 1)
+      targetLW = 86; targetLH = 100; targetLR = 43;
+      targetRW = 86; targetRH = 100; targetRR = 43;
+      break;
+    case "RISA": // Cheerful bouncing arches
+      targetLW = 88; targetLH = 54; targetLR = 27;
+      targetRW = 88; targetRH = 54; targetRR = 27;
+      targetArch = 1.0;
+      break;
+    case "RISA_OJOS": // Closed laughing arches with sweat & star
+      targetLW = 88; targetLH = 52; targetLR = 26;
+      targetRW = 88; targetRH = 52; targetRR = 26;
+      targetArch = 1.0;
+      break;
+    case "COMPLICIDAD": // Left open, Right wink
+      targetLW = 84; targetLH = 98; targetLR = 42;
+      targetRW = 82; targetRH = 16;  targetRR = 8;
+      break;
+    case "SEGURO": // Confident almond eyes
+      targetLW = 88; targetLH = 82; targetLR = 32;
+      targetRW = 88; targetRH = 82; targetRR = 32;
+      targetAngle = 8;
+      break;
+    case "OOPS": // Looking down-right sheepishly
+      targetLW = 82; targetLH = 90; targetLR = 40;
+      targetRW = 82; targetRH = 90; targetRR = 40;
+      break;
+    case "VERGUENZA": // Looking slightly down with blush
+      targetLW = 82; targetLH = 88; targetLR = 40;
+      targetRW = 82; targetRH = 88; targetRR = 40;
+      break;
+    case "RISA_APENADA": // Nervous laugh
+      targetLW = 88; targetLH = 54; targetLR = 27;
+      targetRW = 88; targetRH = 54; targetRR = 27;
+      targetArch = 1.0;
+      break;
+    case "SORPRESA": // Huge wide circular eyes (Image 1 O O)
+      targetLW = 90; targetLH = 102; targetLR = 45;
+      targetRW = 90; targetRH = 102; targetRR = 45;
+      break;
+    case "SHOCK": // Wide trembling vertical capsule eyes
+      targetLW = 76; targetLH = 100; targetLR = 38;
+      targetRW = 76; targetRH = 100; targetRR = 38;
+      break;
+    case "ENFADO": // Sharp angry inward furrow
+      targetLW = 86; targetLH = 68; targetLR = 22;
+      targetRW = 86; targetRH = 68; targetRR = 22;
+      targetAngle = -16;
+      break;
+    case "TRISTEZA": // Drooping sad downward eyes
+      targetLW = 86; targetLH = 70; targetLR = 24;
+      targetRW = 86; targetRH = 70; targetRR = 24;
+      targetAngle = 14;
+      break;
+  }
+}
+
+// Mouse tracking
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+  
+  lastInteraction = Date.now();
+  targetGazeX = Math.max(-10, Math.min(10, ((mx - screenW / 2) / (screenW / 2)) * 10));
+  targetGazeY = Math.max(-5, Math.min(5, ((my - screenH / 2) / (screenH / 2)) * 5));
+});
+
+canvas.addEventListener('mouseleave', () => {
+  targetGazeX = 0;
+  targetGazeY = 0;
+});
+
+let animTime = 0;
+
+function drawRoundedRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.min(w/2, h/2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawEye(ctx, cx, cy, w, h, r, angle, isLeft) {
+  const curH = Math.max(4, h * blinkScale);
+  const curR = Math.min(r, curH / 2);
+
+  // Safety clamp [22, 160]
+  const halfH = curH / 2;
+  if (cy - halfH < 22) cy = 22 + halfH;
+  if (cy + halfH > 160) cy = 160 - halfH;
+
+  const x0 = cx - w / 2;
+  const y0 = cy - halfH;
+
+  // Inverted happy arch (^ ^)
+  if (isArch > 0.4) {
+    const thick = 14;
+    const rx_out = w / 2;
+    const ry_out = curH * 0.70;
+    let archBaseY = cy + ry_out * 0.40;
+    if (archBaseY - ry_out < 24) archBaseY = 24 + ry_out;
+
+    ctx.save();
+    ctx.fillStyle = COLOR_EYES;
+    ctx.beginPath();
+    ctx.ellipse(cx, archBaseY, rx_out, ry_out, 0, Math.PI, 0);
+    ctx.lineTo(cx + rx_out - thick, archBaseY);
+    ctx.ellipse(cx, archBaseY, Math.max(2, rx_out - thick), Math.max(2, ry_out - thick), 0, 0, Math.PI, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // Angled furrow eyes (Enfado / Tristeza)
+  if (Math.abs(angle) > 2) {
+    ctx.save();
+    ctx.fillStyle = COLOR_EYES;
+    drawRoundedRect(ctx, x0, y0, w, curH, curR);
+    ctx.fill();
+
+    // Cut off angled top eyelid
+    ctx.fillStyle = COLOR_BG;
+    ctx.beginPath();
+    if (angle < 0) { // Anger (furrowed inward)
+      if (isLeft) {
+        ctx.moveTo(x0 - 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 + 22);
+      } else {
+        ctx.moveTo(x0 - 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 - 2);
+        ctx.lineTo(x0 - 2, y0 + 22);
+      }
+    } else { // Sadness (drooping downward outer)
+      if (isLeft) {
+        ctx.moveTo(x0 - 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 - 2);
+        ctx.lineTo(x0 - 2, y0 + 22);
+      } else {
+        ctx.moveTo(x0 - 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 - 2);
+        ctx.lineTo(x0 + w + 2, y0 + 22);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  // Normal rounded capsule
+  ctx.save();
+  ctx.fillStyle = COLOR_EYES;
+  drawRoundedRect(ctx, x0, y0, w, curH, curR);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSparkle(ctx, sx, sy, radius, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(sx - radius, sy); ctx.lineTo(sx + radius, sy);
+  ctx.moveTo(sx, sy - radius); ctx.lineTo(sx, sy + radius);
+  ctx.stroke();
+  ctx.fillStyle = COLOR_EYES;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSweatdrop(ctx, sx, sy, col = COLOR_LIME) {
+  ctx.save();
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(sx, sy + 7, 6, 0, Math.PI);
+  ctx.lineTo(sx, sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = COLOR_EYES;
+  ctx.beginPath();
+  ctx.arc(sx - 1, sy + 6, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBlush(ctx, bx, by) {
+  ctx.save();
+  ctx.strokeStyle = COLOR_PINK;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (let i = -1; i <= 1; i++) {
+    const x = bx + (i * 9);
+    ctx.beginPath();
+    ctx.moveTo(x - 3, by + 6);
+    ctx.lineTo(x + 3, by - 6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function update() {
+  const now = Date.now();
+  animTime += 0.045;
+
+  // Micro-blinking (disabled for arch eyes)
+  if (isArch < 0.4) {
+    if (now > nextBlink) {
+      blinkEnd = now + 130;
+      nextBlink = now + 2600 + Math.random() * 3000;
+    }
+    const targetBlink = (now < blinkEnd) ? 0.08 : 1.0;
+    blinkScale += (targetBlink - blinkScale) * 0.4;
+  } else {
+    blinkScale = 1.0;
+  }
+
+  // Idle gaze
+  if (now - lastInteraction > 3500) {
+    if (now > nextIdleGlance) {
+      if (currentState === "PENSANDO") {
+        targetGazeX = 14 + (Math.random() * 10 - 5);
+        targetGazeY = -10;
+      } else if (currentState === "OOPS") {
+        targetGazeX = 10; targetGazeY = 10;
+      } else if (currentState === "VERGUENZA") {
+        targetGazeX = 0; targetGazeY = 8;
+      } else {
+        targetGazeX = (Math.random() * 30 - 15);
+        targetGazeY = (Math.random() * 16 - 8);
+      }
+      nextIdleGlance = now + 1800 + Math.random() * 2400;
+    }
+  }
+
+  gazeX += (targetGazeX - gazeX) * 0.14;
+  gazeY += (targetGazeY - gazeY) * 0.14;
+
+  const breathY = Math.sin(animTime * 0.8) * 1.5;
+
+  let bounceY = 0;
+  let jitterX = 0, jitterY = 0;
+  if (currentState === "RISA" || currentState === "RISA_APENADA") {
+    bounceY = -Math.abs(Math.sin(animTime * 4.5)) * 5;
+  } else if (currentState === "EXITO") {
+    bounceY = -Math.abs(Math.sin(animTime * 3.0)) * 4;
+  } else if (currentState === "SHOCK") {
+    jitterX = (Math.random() * 6 - 3) * 0.7;
+    jitterY = (Math.random() * 6 - 3) * 0.7;
+  }
+
+  const destLX = eyeBaseLeftX + gazeX + jitterX;
+  const destLY = eyeBaseY + gazeY + breathY + bounceY + jitterY;
+  const destRX = eyeBaseRightX + gazeX + jitterX;
+  const destRY = eyeBaseY + gazeY + breathY + bounceY + jitterY;
+
+  eyeLX += (destLX - eyeLX) * 0.18;
+  eyeLY += (destLY - eyeLY) * 0.18;
+  eyeRX += (destRX - eyeRX) * 0.18;
+  eyeRY += (destRY - eyeRY) * 0.18;
+
+  const lookNormX = gazeX / 18.0;
+  const leftScaleX = 1.0 - (lookNormX * 0.06);
+  const rightScaleX = 1.0 + (lookNormX * 0.06);
+
+  eyeLW += ((targetLW * leftScaleX) - eyeLW) * 0.20;
+  eyeLH += (targetLH - eyeLH) * 0.20;
+  eyeLR += (targetLR - eyeLR) * 0.20;
+
+  eyeRW += ((targetRW * rightScaleX) - eyeRW) * 0.20;
+  eyeRH += (targetRH - eyeRH) * 0.20;
+  eyeRR += (targetRR - eyeRR) * 0.20;
+
+  eyeAngle += (targetAngle - eyeAngle) * 0.20;
+  isArch += (targetArch - isArch) * 0.20;
+
+  // Particle updates
+  if (currentState === "CARINO") {
+    if (Math.random() < 0.1) {
+      hearts.push({ x: 120 + Math.random() * 80, y: 145, speedY: 1.2 + Math.random(), sway: Math.random() * 10, size: 5 + Math.random() * 3 });
+    }
+    hearts.forEach(h => { h.y -= h.speedY; h.x += Math.sin(animTime * 2 + h.sway) * 0.6; });
+    hearts = hearts.filter(h => h.y > 15);
+  } else {
+    hearts = [];
+  }
+
+  if (currentState === "TRISTEZA") {
+    if (Math.random() < 0.15) {
+      const isL = Math.random() < 0.5;
+      tears.push({ x: isL ? (eyeLX - 24 + Math.random() * 10) : (eyeRX + 14 + Math.random() * 10), y: eyeLY + 20, speedY: 2.5 + Math.random() * 1.5, len: 8 + Math.random() * 10 });
+    }
+    tears.forEach(t => { t.y += t.speedY; });
+    tears = tears.filter(t => t.y < screenH - 5);
+  } else {
+    tears = [];
+  }
+}
+
+function render() {
+  ctx.fillStyle = COLOR_BG;
+  ctx.fillRect(0, 0, screenW, screenH);
+
+  // Draw Eyes
+  drawEye(ctx, eyeLX, eyeLY, eyeLW, eyeLH, eyeLR, eyeAngle, true);
+  drawEye(ctx, eyeRX, eyeRY, eyeRW, eyeRH, eyeRR, -eyeAngle, false);
+
+  // Overlays
+  if (currentState === "REPOSO") {
+    const pulse = 1.0 + 0.1 * Math.sin(animTime * 2.0);
+    const ax = eyeRX + 28;
+    const ay = eyeRY - 46;
+    ctx.fillStyle = COLOR_LIME;
+    drawRoundedRect(ctx, ax, ay, 28 * pulse, 8, 4);
+    ctx.fill();
+  }
+
+  if (currentState === "ESCUCHA") {
+    ctx.fillStyle = COLOR_LIME;
+    for (let i = 0; i < 3; i++) {
+      const waveH = (Math.sin(animTime * 4.0 + i * 1.0) * 14.0) + 18.0;
+      drawRoundedRect(ctx, 16 + (i * 9), (screenH / 2) - (waveH / 2), 4, waveH, 2);
+      ctx.fill();
+      drawRoundedRect(ctx, (screenW - 20) - (i * 9), (screenH / 2) - (waveH / 2), 4, waveH, 2);
+      ctx.fill();
+    }
+  }
+
+  if (currentState === "PENSANDO") {
+    ctx.fillStyle = COLOR_LIME;
+    for (let i = 0; i < 3; i++) {
+      const phase = animTime * 3.0 + i * 1.1;
+      const dotX = eyeRX + 16 + (i * 12);
+      const dotY = eyeRY - 38 + (Math.sin(phase) * 5.0);
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (currentState === "EXITO") {
+    const spY = Math.sin(animTime * 3.0) * 6.0;
+    drawSparkle(ctx, 36, 36 + spY, 11, COLOR_LIME);
+    drawSparkle(ctx, 284, 36 - spY, 12, COLOR_LIME);
+    drawSparkle(ctx, 160, 22 + spY * 0.5, 9, COLOR_EYES);
+  }
+
+  if (currentState === "CARINO") {
+    drawBlush(ctx, eyeLX - 6, eyeLY + 32);
+    drawBlush(ctx, eyeRX + 6, eyeRY + 32);
+    ctx.fillStyle = COLOR_PINK;
+    hearts.forEach(h => {
+      ctx.beginPath();
+      ctx.arc(h.x - h.size/2, h.y, h.size/2, 0, Math.PI * 2);
+      ctx.arc(h.x + h.size/2, h.y, h.size/2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(h.x - h.size, h.y);
+      ctx.lineTo(h.x + h.size, h.y);
+      ctx.lineTo(h.x, h.y + h.size * 1.2);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  if (currentState === "COOL") {
+    const gw = 92, gh = 70;
+    const gy = eyeLY - 4;
+    ctx.fillStyle = COLOR_COOL_DARK;
+    ctx.strokeStyle = COLOR_EYES;
+    ctx.lineWidth = 3;
+
+    drawRoundedRect(ctx, eyeLX - gw / 2, gy - gh / 2, gw, gh, 18);
+    ctx.fill(); ctx.stroke();
+    drawRoundedRect(ctx, eyeRX - gw / 2, gy - gh / 2, gw, gh, 18);
+    ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = COLOR_EYES;
+    ctx.fillRect(eyeLX + gw / 2 - 2, gy - 4, eyeRX - eyeLX - gw + 4, 8);
+
+    // Specular shine clipped to glasses
+    ctx.save();
+    ctx.beginPath();
+    drawRoundedRect(ctx, eyeLX - gw / 2, gy - gh / 2, gw, gh, 18);
+    drawRoundedRect(ctx, eyeRX - gw / 2, gy - gh / 2, gw, gh, 18);
+    ctx.clip();
+    const gleamOffset = ((animTime * 30.0) % (gw + 40)) - 20;
+    ctx.strokeStyle = COLOR_EYES;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(eyeLX - gw / 2 + gleamOffset, gy - gh / 2);
+    ctx.lineTo(eyeLX - gw / 2 + gleamOffset + 16, gy + gh / 2);
+    ctx.moveTo(eyeRX - gw / 2 + gleamOffset, gy - gh / 2);
+    ctx.lineTo(eyeRX - gw / 2 + gleamOffset + 16, gy + gh / 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (currentState === "RISA_OJOS") {
+    drawSparkle(ctx, 160, 24, 11, COLOR_LIME);
+    drawSweatdrop(ctx, eyeLX - 36, eyeLY - 12);
+    drawSweatdrop(ctx, eyeRX + 36, eyeRY - 12);
+  }
+
+  if (currentState === "SEGURO") {
+    drawSparkle(ctx, eyeLX - 36, eyeLY - 10, 10, COLOR_LIME);
+    drawSparkle(ctx, eyeRX + 36, eyeRY - 10, 10, COLOR_LIME);
+  }
+
+  if (currentState === "OOPS") {
+    drawSweatdrop(ctx, eyeRX + 34, eyeRY - 8 + Math.sin(animTime * 2.5) * 4.0);
+  }
+
+  if (currentState === "VERGUENZA") {
+    drawBlush(ctx, eyeLX - 4, eyeLY + 32);
+    drawBlush(ctx, eyeRX + 4, eyeRY + 32);
+  }
+
+  if (currentState === "RISA_APENADA") {
+    drawBlush(ctx, eyeLX - 4, eyeLY + 30);
+    drawBlush(ctx, eyeRX + 4, eyeRY + 30);
+    drawSweatdrop(ctx, eyeRX + 34, eyeRY - 12);
+  }
+
+  if (currentState === "SHOCK") {
+    drawSweatdrop(ctx, eyeRX + 34, eyeRY - 14);
+    drawSweatdrop(ctx, eyeLX - 34, eyeLY - 14);
+  }
+
+  if (currentState === "ENFADO") {
+    const pulse = 1.0 + 0.25 * Math.sin(animTime * 6.0);
+    const s = 10 * pulse;
+    const cx = 278, cy = 32;
+    ctx.fillStyle = COLOR_RED;
+    ctx.fillRect(cx - s, cy - s, s * 2, 3);
+    ctx.fillRect(cx - s, cy + s - 3, s * 2, 3);
+    ctx.fillRect(cx - s, cy - s, 3, s * 2);
+    ctx.fillRect(cx + s - 3, cy - s, 3, s * 2);
+  }
+
+  if (currentState === "TRISTEZA") {
+    ctx.fillStyle = COLOR_CYAN;
+    tears.forEach(t => {
+      drawRoundedRect(ctx, t.x, t.y, 4, t.len, 2);
+      ctx.fill();
+    });
+  }
+
+  // Permanent Scene Number & Name Overlay
+  const idx = STATES.indexOf(currentState) + 1;
+  const numStr = `[${String(idx).padStart(2, '0')}] ${currentState}`;
+  ctx.save();
+  ctx.font = "bold 11px monospace";
+  const txtMetrics = ctx.measureText(numStr);
+  const badgeW = txtMetrics.width + 12;
+  const badgeH = 17;
+  ctx.fillStyle = "#000000";
+  drawRoundedRect(ctx, 3, 3, badgeW, badgeH, 4);
+  ctx.fill();
+  ctx.strokeStyle = COLOR_LIME;
+  ctx.lineWidth = 1.5;
+  drawRoundedRect(ctx, 3, 3, badgeW, badgeH, 4);
+  ctx.stroke();
+  ctx.fillStyle = COLOR_LIME;
+  ctx.fillText(numStr, 8, 15);
+  ctx.restore();
+}
+
+function loop() {
+  update();
+  render();
+  requestAnimationFrame(loop);
+}
+
+// Build buttons
+const btnContainer = document.getElementById('btnContainer');
+STATES.forEach((st, i) => {
+  const b = document.createElement('button');
+  const numStr = `[${String(i + 1).padStart(2, '0')}] ${st}`;
+  b.innerText = numStr;
+  b.onclick = () => setState(st);
+  if (st === currentState) b.classList.add('active');
+  btnContainer.appendChild(b);
+});
+
+loop();
+</script>
+</body>
+</html>
